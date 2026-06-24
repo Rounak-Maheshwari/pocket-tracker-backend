@@ -37,6 +37,17 @@ class AccountListCreateView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     def post(self, request):
+        user=request.user
+        # a user can only have a single LOAN/DEBT account so validation check.
+        accounts = Account.objects.filter(user=user)
+        loan_account = accounts.filter(account_type__name='LOAN/DEBT')
+        investment_account = accounts.filter(account_type__name='INVESTMENTS')
+        if loan_account:
+            return Response("A user can only have one loan account", status=status.HTTP_403_FORBIDDEN)
+
+        if investment_account:
+            return Response("A user can only have one investment account", status=status.HTTP_403_FORBIDDEN)
+
         serializer = AccountSerializer(data=request.data)
 
         if serializer.is_valid():

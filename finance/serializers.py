@@ -20,8 +20,7 @@ class AccountSerializer(serializers.ModelSerializer):
     def validate_balance(self, value):
         if value < 0:
             return serializers.ValidationError("Balance cant be less than 0")
-        return value
-    
+        return value    
 
 class TransactionTypeSerializer(serializers.ModelSerializer):
 
