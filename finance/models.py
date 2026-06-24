@@ -18,3 +18,29 @@ class Account(models.Model):
 
     def __str__(self):
         return f"{self.user.name} - {self.user.email} -------- Rs {self.balance}"
+    
+
+class TransactionType(models.Model):
+    name = models.CharField(max_length=50)
+
+    def __str__(self):
+        return self.name
+    
+
+class TransactionTypeCategory(models.Model):
+    name = models.CharField(max_length=100)
+    transaction_type = models.ForeignKey(TransactionType, on_delete=models.CASCADE, related_name="transaction_type_category")
+
+    def __str__(self):
+        return f"{self.id} - Category {self.transaction_type.name} ----------------- {self.name}"
+    
+
+class Transaction(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="transactions")
+    from_account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="departure_account", blank=True, null=True)
+    transaction_type = models.ForeignKey(TransactionType, on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    note = models.TextField(max_length=150, null=True, blank=True)
+    to_account = models.ForeignKey(Account, on_delete=models.CASCADE, null=True, blank=True, related_name="arriving_account")
+    category = models.ForeignKey(TransactionTypeCategory, on_delete=models.PROTECT, related_name="transactions", null=True, blank=True)
+    event_date = models.DateField()

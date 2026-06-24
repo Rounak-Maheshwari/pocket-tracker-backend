@@ -1,12 +1,12 @@
 from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.generics import GenericAPIView
-from rest_framework.mixins import ListModelMixin, UpdateModelMixin, DestroyModelMixin
+from rest_framework.mixins import ListModelMixin, UpdateModelMixin, DestroyModelMixin, CreateModelMixin
 from rest_framework import permissions, status
 from rest_framework.response import Response  
 from rest_framework.permissions import SAFE_METHODS, IsAuthenticated
-from .models import Account, AccountType
-from .serializers import AccountTypeSerializer, AccountSerializer
+from .models import Account, AccountType, Transaction, TransactionTypeCategory, TransactionType
+from .serializers import AccountTypeSerializer, AccountSerializer, TransactionTypeCategorySerializer, TransactionTypeSerializer, TransactionSerializer
 
 # Create your views here.
 def has_object_permission(self, request, view, obj):
@@ -56,3 +56,65 @@ class AccountUpdateDeleteView(GenericAPIView, UpdateModelMixin, DestroyModelMixi
 
     def delete(self, request, *args, **kwargs):
         return self.destroy(request, *args, **kwargs)
+    
+
+class TransactionTypeListView(GenericAPIView, ListModelMixin):
+    permission_classes = [IsAuthenticated]
+    queryset = TransactionType.objects.all()
+    serializer_class = TransactionTypeSerializer
+
+    def get(self, request, *args, **kwargs):
+        return self.list(request, *args, **kwargs)
+
+class TransactionCategoryListView(GenericAPIView, ListModelMixin):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TransactionTypeSerializer
+
+    def get_queryset(self):
+        queryset = TransactionTypeCategory.objects.all()
+
+        type_filter = self.request.query_params.get('type')
+
+        if type_filter:
+            queryset = queryset.filter(transaction_type__name = type_filter.upper())
+        
+        return queryset
+
+
+    def get(self, request, *args, **kwargs):
+        return self.list(request, *args, **kwargs)
+    
+
+class TransactionCreateListView(GenericAPIView, CreateModelMixin, ListModelMixin):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TransactionSerializer
+
+    def get_queryset(self):
+        queryset = Transaction.objects.filter(user=self.request.user)
+
+        type_filter = self.request.query_params.get("type")
+
+        if type_filter:
+            queryset = queryset.filter(transaction_type__name=type_filter.upper())
+        return queryset
+
+
+    def get(self, request, *args, **kwargs):
+        return self.list(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        return self.create(request, *args, **kwargs)
+
+class TrnasactionUpdateDeleteView(GenericAPIView, UpdateModelMixin, DestroyModelMixin):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TransactionSerializer
+
+    def get_queryset(self):
+        return Transaction.objects.filter(user=self.request.user)
+    
+    def put(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    def delete(self, request, *args, **kwargs):
+        return self.destroy(request, *args, **kwargs)
+    
