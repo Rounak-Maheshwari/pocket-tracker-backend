@@ -60,9 +60,13 @@ class TransactionSerializer(serializers.ModelSerializer):
         
         amount = attr.get('amount')
         from_account = attr.get('from_account')
+        to_account = attr.get('to_account')
         transaction_type = attr.get('transaction_type')
         if transaction_type.name == 'EXPENSE' and amount > from_account.balance:
             raise serializers.ValidationError("Insufficient Balance")
+
+        if transaction_type.name == 'TRANSFER' and from_account.id == to_account.id:
+            raise serializers.ValidationError("You can't transfer money to the same account.")
 
         return attr
     
@@ -81,7 +85,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             to_account.balance += amount
             to_account.save()
         elif transaction_type.name == "TRANSFER":
-            from_account -= amount
+            from_account.balance -= amount
             from_account.save()
 
             to_account.balance += amount
