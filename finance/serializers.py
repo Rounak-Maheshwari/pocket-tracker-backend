@@ -12,15 +12,31 @@ class AccountSerializer(serializers.ModelSerializer):
     account_type_details = AccountTypeSerializer(source="account_type", read_only=True)
     balance = serializers.ReadOnlyField()
     user = serializers.ReadOnlyField(source='user.email')
+    available_credit = serializers.ReadOnlyField()
 
     class Meta:
         model = Account
-        fields = ["id", "user", "name", "account_type", "account_type_details", "balance", "created_at", "updated_at"]
+        fields = ["id", "user", "name", "account_type", "account_type_details", "balance", "created_at", "updated_at", "fixed_credit_limit", "due_amount", "available_credit"]
 
-    def validate_balance(self, value):
-        if value < 0:
+    def validate(self, attr):
+        balance = attr.get("balance")
+        account_type = attr.get('account_type')
+        due_amount = attr.get('due_amount')
+        fixed_credit_limit = attr.get('fixed_credit_limit')
+        available_credit = attr.get('available_credit')
+
+        if balance and balance < 0:
             return serializers.ValidationError("Balance cant be less than 0")
-        return value    
+        if account_type.name in ['CREDIT CARD', 'LOAN/DEBT']:
+            if due_amount > fixed_credit_limit or (available_credit != None and available_credit > fixed_credit_limit):
+                raise serializers.ValidationError("Due amount or Available credit can't be grether than the Fixed Credit")
+        return attr    
+    
+    def create(self, validated_data):
+        account = Account.objects.create(**validated_data)
+        account.save()
+
+        return account
 
 class TransactionTypeSerializer(serializers.ModelSerializer):
 
@@ -61,11 +77,46 @@ class TransactionSerializer(serializers.ModelSerializer):
         from_account = attr.get('from_account')
         to_account = attr.get('to_account')
         transaction_type = attr.get('transaction_type')
-        if transaction_type.name == 'EXPENSE' and amount > from_account.balance:
-            raise serializers.ValidationError("Insufficient Balance")
 
+        # checking that if the transaction type is 'EXPENSE' or 'TRANSFER' then there must be from_account else this will raise an error
+        if transaction_type.name in "EXPENSE" and from_account == None:
+            raise serializers.ValidationError("You hanven't selected an account to debit money")
+        if transaction_type.name == 'INCOME' and to_account == None:
+            raise serializers.ValidationError("You can't have an income without selecting an account.")
+        if transaction_type.name in "TRANSFER" and (from_account == None or to_account == None):
+            raise serializers.ValidationError("You hanven't selected an account.")
+
+        if from_account.account_type.name in ['CREDIT CARD', 'LOAN/DEBT']:
+            fixed_credit_limit = attr.get('fixed_credit_limit')
+            available_credit = from_account.available_credit
+            print("available_credit:", available_credit)
+            due_amount = attr.get('due_amount')
+        
+        # checking that we are not transfering money from and to the same account like transfering account A money to account A.
         if transaction_type.name == 'TRANSFER' and from_account.id == to_account.id:
             raise serializers.ValidationError("You can't transfer money to the same account.")
+        
+
+        # CHECKING THAT THE USER CAN'T TRANSFER MONEY FROM CASH ACCOUNT TO ANY OTHER ACCOUNT.
+        if from_account and from_account.account_type.name == 'CASH':
+            if transaction_type.name == 'EXPENSE' and amount > from_account.balance:
+                raise serializers.ValidationError("Insufficient Balance")
+            elif transaction_type.name == 'TRANSFER': 
+                raise serializers.ValidationError("Can't transfer money from cash account.")
+
+        # checking in case of spending/transfering money from bank or cash then the amount should not exceeds the bank/cash account balance.
+        if from_account and from_account.account_type.name == 'BANK':
+            if transaction_type.name == 'EXPENSE' or transaction_type.name == 'TRANSFER' and amount > from_account.balance:
+                raise serializers.ValidationError("Insufficient Balance")
+
+        # checking in case of spending money from Credit Cards the amount of money should not exceeds the available limit.
+        if from_account and from_account.account_type.name in ['CREDIT CARD', 'LOAN/DEBT']:
+            if (transaction_type.name == "EXPENSE" or transaction_type.name == 'TRANSFER') and amount > available_credit:
+                raise serializers.ValidationError('Ammount exceeds the available Credit limit.')
+        
+        # in case of income we can't have an income in the DEBT accounts (CREDIT/LOAN)
+        if to_account and to_account.account_type.name in ['CREDIT CARD', 'LOAN/DEBT'] and transaction_type.name == 'INCOME':
+            raise serializers.ValidationError("You can't have income in the Credit Card or Loan Account.")
 
         return attr
     
@@ -78,17 +129,30 @@ class TransactionSerializer(serializers.ModelSerializer):
         to_account = validated_data.get("to_account")
 
         if transaction_type.name == 'EXPENSE':
-            from_account.balance -= amount
-            from_account.save()
+            if from_account.account_type.name in ['CREDIT CARD', 'LOAN']:
+                from_account.due_amount += amount
+                from_account.save()
+            elif from_account.account_type.name in ['BANK', 'CASH']:    
+                from_account.balance -= amount
+                from_account.save()
         elif transaction_type.name == "INCOME":
             to_account.balance += amount
             to_account.save()
-        elif transaction_type.name == "TRANSFER":
-            from_account.balance -= amount
-            from_account.save()
 
-            to_account.balance += amount
-            to_account.save()
+        elif transaction_type.name == "TRANSFER":
+            if from_account.account_type.name in ['CREDIT CARD', 'LOAN']:
+                from_account.due_amount += amount
+                from_account.save()
+            elif from_account.account_type.name in ['BANK']:    
+                from_account.balance -= amount
+                from_account.save()
+
+            if to_account.account_type.name in ['CREDIT CARD', 'LOAN']:
+                to_account.due_amount -= amount
+                to_account.save()
+            elif to_account.account_type.name in ['BANK', "CASH"]:
+                to_account.balance += amount
+                to_account.save()
 
         transaction = Transaction.objects.create(
             from_account=validated_data.get('from_account'),
@@ -102,7 +166,7 @@ class TransactionSerializer(serializers.ModelSerializer):
         )
 
         transaction.save()
-        return validated_data
+        return transaction
 
     def update(self, instance, validated_data):
         old_transaction = self.instance
