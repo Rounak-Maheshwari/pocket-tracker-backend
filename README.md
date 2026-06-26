@@ -19,7 +19,7 @@ A high-utility, secure, and production-optimized personal finance API engine bui
 | Layer | Component | Description |
 | :--- | :--- | :--- |
 | **Backend Core** | Django & DRF | REST API development, security hooks, and router pipelines |
-| **Database** | SQLite / PostgreSQL | Structured relational ledger storage layer |
+| **Database** | SQLite | Structured relational ledger storage layer |
 | **Authentication**| Simple JWT | Secure, stateless token-based identity verification |
 | **Environment** | python-dotenv | Decoupled production-ready secret variable configuration |
 
