@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import SAFE_METHODS, IsAuthenticated
 from .models import Account, AccountType, Transaction, TransactionTypeCategory, TransactionType
 from .serializers import AccountTypeSerializer, AccountSerializer, TransactionTypeCategorySerializer, TransactionTypeSerializer, TransactionSerializer
+from django.db.models import Sum
 
 # Create your views here.
 def has_object_permission(self, request, view, obj):
@@ -85,7 +86,6 @@ class TransactionCategoryListView(GenericAPIView, ListModelMixin):
 
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)
-    
 
 class TransactionCreateListView(GenericAPIView, CreateModelMixin, ListModelMixin):
     permission_classes = [IsAuthenticated]
@@ -93,11 +93,15 @@ class TransactionCreateListView(GenericAPIView, CreateModelMixin, ListModelMixin
 
     def get_queryset(self):
         queryset = Transaction.objects.filter(user=self.request.user)
-
         type_filter = self.request.query_params.get("type")
-
+        month = self.request.query_params.get("month")
+        year = self.request.query_params.get("year")
         if type_filter:
             queryset = queryset.filter(transaction_type__name=type_filter.upper())
+        if month and year:
+            start_date = f"{year}-{month}-01"
+            end_date = f"{year}-{month}-30"
+            queryset = queryset.filter(event_date__range=(start_date, end_date))
         return queryset
 
 
@@ -161,3 +165,101 @@ class TrnasactionUpdateDeleteView(GenericAPIView, UpdateModelMixin, DestroyModel
     def delete(self, request, *args, **kwargs):
         return self.destroy(request, *args, **kwargs)
     
+
+class FinancialAnalyticsListView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        
+        # for getting the account details
+        bank_accounts = Account.objects.filter(user=request.user).filter(account_type__name="BANK")
+        cash_accounts = Account.objects.filter(user=request.user).filter(account_type__name="CASH")
+        credit_accounts = Account.objects.filter(user=request.user).filter(account_type__name="CREDIT CARD")
+
+        bank_accounts_total = bank_accounts.aggregate(total=Sum('balance'))
+        cash_accounts_total = cash_accounts.aggregate(total=Sum('balance'))
+        credit_accounts_dues = credit_accounts.aggregate(total=Sum('due_amount'))
+
+        bank_accounts_total_balance = bank_accounts_total.get('total') or 0
+        cash_accounts_total_balance = cash_accounts_total.get('total') or 0
+        credit_accounts_total_balance = credit_accounts_dues.get('total') or 0
+
+        total_liquid_flow = bank_accounts_total_balance + cash_accounts_total_balance
+
+        # get the list of bank accounts to display on frontend.
+        all_banks_detils = bank_accounts.values('name', 'balance')
+        all_cash_details = cash_accounts.values('name', 'balance')
+        all_credit_details = credit_accounts.values('name', 'fixed_credit_limit', 'due_amount')
+
+
+
+        queryset = Transaction.objects.filter(user=self.request.user)
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        if start_date and end_date:
+            queryset = queryset.filter(event_date__range=(start_date, end_date))
+        
+        inflows = queryset.filter(transaction_type__name='INCOME')
+        expenses = queryset.filter(transaction_type__name="EXPENSE")
+
+        total_inflow = inflows.aggregate(total=Sum('amount'))
+        total_expense = expenses.aggregate(total=Sum('amount')) 
+
+        total_inflow_amount = total_inflow.get('total') or 0
+        total_expense_amount = total_expense.get('total') or 0
+
+        savings = total_inflow_amount - total_expense_amount
+
+        sql_category_summary = queryset.filter(transaction_type__name='EXPENSE').values('category__name').annotate(total_spent=Sum('amount'))
+
+        # to get the category set according to the queryset filter.
+        category_breakdown = []
+        for row in sql_category_summary:
+            category_name = row.get('category__name')
+            total_spent = row.get('total_spent') or 0
+
+            percentage = 0.0
+            if total_expense_amount > 0:
+                percentage = round((total_spent / total_expense_amount) * 100, 2)
+
+            category_breakdown.append({
+                "name": category_name,
+                "total": total_spent,
+                "percentage": percentage
+            })
+            
+        dashboard_payload = {
+            "filter_info": {
+                "start_date": request.query_params.get('start_date'),
+                "end_date": request.query_params.get('end_date')
+            },
+            "analytics": {
+                "savings": savings,
+                "total_inflows": total_inflow_amount,
+                "total_expenses": total_expense_amount
+            }, 
+            "accounts_info": {
+                "total_liquid_flow": total_liquid_flow,
+                "total_credit_dues": credit_accounts_total_balance,
+                "total_bank_account_balance": bank_accounts_total_balance,
+                "total_cash_account_balance": cash_accounts_total_balance
+            },
+            "lifetime_accounts": {
+                "bank_lists": all_banks_detils,
+                "cash_lists": all_cash_details,
+                "credit_card_lists": all_credit_details,
+            },
+            'category_breakdown': category_breakdown,
+            
+        }
+
+        return Response(dashboard_payload, status=status.HTTP_200_OK)
+
+
+
+
+
+
+
+
+

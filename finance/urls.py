@@ -1,4 +1,4 @@
-from .views import AccountListCreateView, ListAccountTypesView, AccountUpdateDeleteView, TransactionTypeListView, TransactionCategoryListView, TransactionCreateListView, TrnasactionUpdateDeleteView
+from .views import AccountListCreateView, ListAccountTypesView, AccountUpdateDeleteView, TransactionTypeListView, TransactionCategoryListView, TransactionCreateListView, TrnasactionUpdateDeleteView, FinancialAnalyticsListView
 from django.urls import path
 
 
@@ -9,4 +9,5 @@ urlpatterns = [
     path('transaction/transaction-category/', TransactionCategoryListView.as_view()),
     path('transaction/list-create/', TransactionCreateListView.as_view()),
     path('transaction/update-delete/<int:pk>', TrnasactionUpdateDeleteView.as_view()),
+    path('financial-analytics/', FinancialAnalyticsListView.as_view()),
 ]

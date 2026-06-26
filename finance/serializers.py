@@ -86,7 +86,7 @@ class TransactionSerializer(serializers.ModelSerializer):
         if transaction_type.name in "TRANSFER" and (from_account == None or to_account == None):
             raise serializers.ValidationError("You hanven't selected an account.")
 
-        if from_account.account_type.name in ['CREDIT CARD', 'LOAN/DEBT']:
+        if from_account and transaction_type.name in ['EXPENSE', 'LOAN/DEBT'] and from_account.account_type.name in ['CREDIT CARD', 'LOAN/DEBT']:
             fixed_credit_limit = attr.get('fixed_credit_limit')
             available_credit = from_account.available_credit
             print("available_credit:", available_credit)
@@ -253,8 +253,6 @@ class TransactionSerializer(serializers.ModelSerializer):
 
         transaction.save()
         return transaction
-
-
     
 
 
