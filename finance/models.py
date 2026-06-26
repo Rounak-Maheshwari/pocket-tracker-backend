@@ -55,3 +55,6 @@ class Transaction(models.Model):
     to_account = models.ForeignKey(Account, on_delete=models.CASCADE, null=True, blank=True, related_name="arriving_account")
     category = models.ForeignKey(TransactionTypeCategory, on_delete=models.PROTECT, related_name="transactions", null=True, blank=True)
     event_date = models.DateField()
+
+    def __str__(self):
+        return f"Userid: {self.user.id} ----- User: {self.user.name} ----------- transaction_type: {self.transaction_type.name} ----------------- amount: {self.amount}"

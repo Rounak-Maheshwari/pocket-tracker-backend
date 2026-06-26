@@ -116,6 +116,47 @@ class TrnasactionUpdateDeleteView(GenericAPIView, UpdateModelMixin, DestroyModel
     
     def put(self, request, *args, **kwargs):
         return self.update(request, *args, **kwargs)
+    
+    def perform_delete(self, instance):
+        transaction = self.instance
+        transaction_type = transaction.transaction_type
+        amount = transaction.amount
+        from_account = transaction.from_account
+        to_account = transaction.to_account
+
+        if transaction_type.name == 'EXPENSE':
+            if from_account and from_account.account_type in ['CASH', 'BANK']:
+                from_account.balance += amount
+                print('amount', amount)
+                print('from_account balance: ', from_account.balance)
+                from_account.save()
+            elif from_account and from_account.account_type in ['CREDIT CARD', 'LOAN/DEBT']:
+                from_account.due_amount -= amount
+                from_account.save()
+        elif transaction_type.name == 'INCOME':
+            if to_account and to_account.account_type in ['CASH', 'BANK']:
+                to_account.balance -= amount
+                to_account.save()
+            # in the income transaction we don't have to check for if to_account is a CREDIT account as we have made it in such a way that the CREDIT CARD cannot have a income.
+        elif transaction_type.name == 'TRANSFER':
+            if (from_account and to_account):
+                # first we need to check if the from account is a bank account or a debt account so have to perform the reverse transactions accordingly.
+                if from_account.account_type in ['BANK', 'CASH']:
+                    from_account.balace += amount
+                    from_account.save()
+                elif from_account.account_type in ['CREDIT CARD', 'LOAN/DEBT']:
+                    from_account.due_amount -= amount
+                    from_account.save()
+
+                # similarly for to account as well.
+                if to_account.account_type in ['BANK', 'CASH']:
+                    to_account.balace -= amount
+                    to_account.save()
+                elif to_account.account_type in ['CREDIT CARD', 'LOAN/DEBT']:
+                    to_account.due_amout += amount
+                    to_account.save()
+
+        transaction.delete()
 
     def delete(self, request, *args, **kwargs):
         return self.destroy(request, *args, **kwargs)

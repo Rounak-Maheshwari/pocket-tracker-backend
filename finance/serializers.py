@@ -91,22 +91,25 @@ class TransactionSerializer(serializers.ModelSerializer):
             available_credit = from_account.available_credit
             print("available_credit:", available_credit)
             due_amount = attr.get('due_amount')
+
+        if transaction_type.name == 'EXPENSE' and to_account:
+            raise serializers.ValidationError("You can't select a to account in an Expense.")
+        elif transaction_type.name == 'INCOME' and from_account:
+            raise serializers.ValidationError("You can't select a from account in an Income.")
         
         # checking that we are not transfering money from and to the same account like transfering account A money to account A.
         if transaction_type.name == 'TRANSFER' and from_account.id == to_account.id:
             raise serializers.ValidationError("You can't transfer money to the same account.")
         
 
-        # CHECKING THAT THE USER CAN'T TRANSFER MONEY FROM CASH ACCOUNT TO ANY OTHER ACCOUNT.
+        # CHECKING THAT THE USER CAN'T TRANSFER MONEY FROM CASH ACCOUNT TO CREDIT ACCOUNT.
         if from_account and from_account.account_type.name == 'CASH':
-            if transaction_type.name == 'EXPENSE' and amount > from_account.balance:
-                raise serializers.ValidationError("Insufficient Balance")
-            elif transaction_type.name == 'TRANSFER': 
-                raise serializers.ValidationError("Can't transfer money from cash account.")
+            if transaction_type.name == 'TRANSFER' and to_account.account_type.name in ['CREDIT CARD']: 
+                raise serializers.ValidationError("Can't transfer money from cash account to credit account.")
 
         # checking in case of spending/transfering money from bank or cash then the amount should not exceeds the bank/cash account balance.
-        if from_account and from_account.account_type.name == 'BANK':
-            if transaction_type.name == 'EXPENSE' or transaction_type.name == 'TRANSFER' and amount > from_account.balance:
+        if from_account and from_account.account_type.name in ['BANK', 'CASH']:
+            if (transaction_type.name == 'EXPENSE' or transaction_type.name == 'TRANSFER') and amount > from_account.balance:
                 raise serializers.ValidationError("Insufficient Balance")
 
         # checking in case of spending money from Credit Cards the amount of money should not exceeds the available limit.
@@ -143,7 +146,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             if from_account.account_type.name in ['CREDIT CARD', 'LOAN']:
                 from_account.due_amount += amount
                 from_account.save()
-            elif from_account.account_type.name in ['BANK']:    
+            elif from_account.account_type.name in ['BANK', 'CASH']:    
                 from_account.balance -= amount
                 from_account.save()
 
@@ -169,80 +172,90 @@ class TransactionSerializer(serializers.ModelSerializer):
         return transaction
 
     def update(self, instance, validated_data):
-        old_transaction = self.instance
-        old_from_account = old_transaction.from_account
-        old_to_account = old_transaction.to_account
-        amount = old_transaction.amount
-        if old_transaction.transaction_type.name == 'EXPENSE':
-            old_from_account.balance += amount
-            old_from_account.save()
-        elif old_transaction.transaction_type.name == 'INCOME':
-            old_to_account.balance -= amount
-            old_to_account.save()
-        elif old_transaction.transaction_type.name == 'TRANSFER':
-            old_from_account.balance += amount
-            old_from_account.save()
-            old_to_account.balance -= amount
-            old_to_account.save()
+        transaction = self.instance
 
-        # updating the balance now
+        from_account = transaction.from_account
+        to_account = transaction.to_account
+        transaction_type = transaction.transaction_type
+        amount = transaction.amount
+
+        if transaction_type.name == 'EXPENSE':
+            if from_account and from_account.account_type in ['CASH', 'BANK']:
+                from_account.balance += amount
+                from_account.save()
+            elif from_account and from_account.account_type in ['CREDIT CARD', 'LOAN/DEBT']:
+                from_account.due_amount -= amount
+                from_account.save()
+        elif transaction_type.name == 'INCOME':
+            if to_account and to_account.account_type in ['CASH', 'BANK']:
+                to_account.balance -= amount
+                to_account.save()
+            # in the income transaction we don't have to check for if to_account is a CREDIT account as we have made it in such a way that the CREDIT CARD cannot have a income.
+        elif transaction_type.name == 'TRANSFER':
+            if (from_account and to_account):
+                # first we need to check if the from account is a bank account or a debt account so have to perform the reverse transactions accordingly.
+                if from_account.account_type in ['BANK', 'CASH']:
+                    from_account.balace += amount
+                    from_account.save()
+                elif from_account.account_type in ['CREDIT CARD', 'LOAN/DEBT']:
+                    from_account.due_amount -= amount
+                    from_account.save()
+
+                # similarly for to account as well.
+                if to_account.account_type in ['BANK', 'CASH']:
+                    to_account.balace -= amount
+                    to_account.save()
+                elif to_account.account_type in ['CREDIT CARD', 'LOAN/DEBT']:
+                    to_account.due_amout += amount
+                    to_account.save()
+
+        # now the slate is clean meaning the transaction got reversed and now just have to create the new transaction according to the user.
         new_from_account = validated_data.get('from_account')
         new_to_account = validated_data.get('to_account')
         new_amount = validated_data.get('amount')
         new_transaction_type = validated_data.get('transaction_type')
 
-        
         if new_transaction_type.name == 'EXPENSE':
-            new_from_account.balance -= new_amount
-            new_from_account.save()
+            if new_from_account.account_type.name in ['CREDIT CARD', 'LOAN']:
+                new_from_account.due_amount += new_amount
+                new_from_account.save()
+            elif new_from_account.account_type.name in ['BANK', 'CASH']:    
+                new_from_account.balance -= new_amount
+                new_from_account.save()
         elif new_transaction_type.name == "INCOME":
             new_to_account.balance += new_amount
             new_to_account.save()
+
         elif new_transaction_type.name == "TRANSFER":
-            new_from_account -= new_amount
-            new_from_account.save()
+            if new_from_account.account_type.name in ['CREDIT CARD', 'LOAN']:
+                new_from_account.due_amount += new_amount
+                new_from_account.save()
+            elif new_from_account.account_type.name in ['BANK']:    
+                new_from_account.balance -= new_amount
+                new_from_account.save()
 
-            new_to_account.balance += new_amount
-            new_to_account.save()
-
+            if to_account.account_type.name in ['CREDIT CARD', 'LOAN']:
+                new_to_account.due_amount -= new_amount
+                new_to_account.save()
+            elif to_account.account_type.name in ['BANK', "CASH"]:
+                new_to_account.balance += new_amount
+                new_to_account.save()
+        
+        
         # Updating the Transaction Model
-        old_transaction.from_account = new_from_account
-        old_transaction.to_account = new_to_account
-        old_transaction.note = validated_data.get('note')
-        old_transaction.amount = validated_data.get('amount')
-        old_transaction.transaction_type = validated_data.get('transaction_type')
-        old_transaction.category = validated_data.get('transaction_type_category')
-        old_transaction.event_date = validated_data.get('event_date')
+        transaction.from_account = new_from_account
+        transaction.to_account = new_to_account
+        transaction.note = validated_data.get('note')
+        transaction.amount = validated_data.get('amount')
+        transaction.transaction_type = validated_data.get('transaction_type')
+        transaction.category = validated_data.get('transaction_type_category')
+        transaction.event_date = validated_data.get('event_date')
 
-        old_transaction.save()
-        return old_transaction
-
-
-    def delete(self, validated_data):
-
-        transaction = self.instance
-        transaction_type = transaction.transaction_type
-        amount = transaction.amount
-        from_account = transaction.from_account
-        to_account = transaction.to_account
-
-        if transaction_type.name == 'EXPENSE':
-            from_account.balance += amount
-            from_account.save()
-
-        elif transaction_type.name == 'INCOME':
-            to_account.balance -= amount
-            to_account.save()
-
-        elif transaction_type.name == 'TRANSFER':
-            from_account.balance += amount
-            from_account.save()
-            to_account.balance -= amount
-            to_account.save()
-
-        transaction.delete()
+        transaction.save()
         return transaction
 
+
+    
 
 
 
