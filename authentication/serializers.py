@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import User
+from django.contrib.auth import authenticate
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -34,3 +35,27 @@ class RegisterSerializer(serializers.ModelSerializer):
         user.save()
 
         return user
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    password1 = serializers.CharField(max_length=50, write_only=True)
+    password2 = serializers.CharField(max_length=50, write_only=True)
+    password = serializers.CharField(max_length=50, write_only=True)
+
+    def validate(self, attr):
+        user = self.context.get('user')
+        password1 = attr.get('password1')
+        password2 = attr.get('password2')
+
+        if not user.check_password(attr.get('password')):
+            raise serializers.ValidationError("Your current password is incorrect. Try angain!")
+        
+        if password1 != password2:
+            raise serializers.ValidationError('Your new password and confirm password does not match')
+
+        return attr
+    
+    def update(self, instance, validated_data):
+        instance.set_password(validated_data.get('password1'))
+        instance.save()
+        return instance
