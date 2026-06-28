@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import SAFE_METHODS, IsAuthenticated
 from .models import Account, AccountType, Transaction, TransactionTypeCategory, TransactionType
 from .serializers import AccountTypeSerializer, AccountSerializer, TransactionTypeCategorySerializer, TransactionTypeSerializer, TransactionSerializer
-from django.db.models import Sum
+from django.db.models import Sum, Q
 
 # Create your views here.
 def has_object_permission(self, request, view, obj):
@@ -32,7 +32,14 @@ class AccountListCreateView(APIView):
 
     def get(self, request):
         user = request.user
+        type = request.query_params.get("type")
         account = Account.objects.filter(user=user)
+
+        if type:
+            if type == "LIQUID":
+                accounts = accounts.filter(Q(account_type__name="BANK") | Q(account_type__name="CASH"))
+            else:
+                accounts = accounts.filter(account_type__name=type)
 
         serializer = AccountSerializer(account, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

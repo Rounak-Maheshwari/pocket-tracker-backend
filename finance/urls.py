@@ -3,6 +3,7 @@ from django.urls import path
 
 
 urlpatterns = [
+    path('list-account-categories/', ListAccountTypesView.as_view()),
     path('list-create-account/', AccountListCreateView.as_view()),
     path('update-account/<int:pk>', AccountUpdateDeleteView.as_view()),
     path('transaction/transaction-types/', TransactionTypeListView.as_view()),
