@@ -55,7 +55,7 @@ class TransactionTypeCategorySerializer(serializers.ModelSerializer):
 
 class TransactionSerializer(serializers.ModelSerializer):
     transaction_type_details = TransactionTypeSerializer(source='transaction_type', read_only=True)
-    transaction_type_category_details = TransactionTypeCategorySerializer(source='transaction_type_category', read_only=True)
+    transaction_type_category_details = TransactionTypeCategorySerializer(source='category', read_only=True)
     user = serializers.ReadOnlyField(source='user.email')
     from_account_details = AccountSerializer(source='from_account', read_only=True)
     to_account_details = AccountSerializer(source='to_account', read_only=True)
@@ -63,13 +63,13 @@ class TransactionSerializer(serializers.ModelSerializer):
 
     # for getting just the id of the data when the user sends a post request
     transaction_type = serializers.PrimaryKeyRelatedField(queryset=TransactionType.objects.all(), required=True, allow_null=False)
-    transaction_type_category = serializers.PrimaryKeyRelatedField(queryset=TransactionTypeCategory.objects.all(), required=False, allow_null = True)
+    category = serializers.PrimaryKeyRelatedField(queryset=TransactionTypeCategory.objects.all(), required=False, allow_null = True)
     from_account = serializers.PrimaryKeyRelatedField(queryset=Account.objects.all(), required=False, allow_null=True)
     to_account = serializers.PrimaryKeyRelatedField(queryset=Account.objects.all(), required=False, allow_null=True)
 
     class Meta:
         model = Transaction
-        fields = ["id", "user", "amount", "note", "event_date", "from_account", "from_account_details", "to_account", "to_account_details", "transaction_type", "transaction_type_details", "transaction_type_category", "transaction_type_category_details"]
+        fields = ["id", "user", "amount", "note", "event_date", "from_account", "from_account_details", "to_account", "to_account_details", "transaction_type", "transaction_type_details", "category", "transaction_type_category_details"]
 
     def validate(self, attr):
         
@@ -77,6 +77,7 @@ class TransactionSerializer(serializers.ModelSerializer):
         from_account = attr.get('from_account')
         to_account = attr.get('to_account')
         transaction_type = attr.get('transaction_type')
+        category = attr.get("category")
 
         # checking that if the transaction type is 'EXPENSE' or 'TRANSFER' then there must be from_account else this will raise an error
         if transaction_type.name in "EXPENSE" and from_account == None:
@@ -85,6 +86,10 @@ class TransactionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("You can't have an income without selecting an account.")
         if transaction_type.name in "TRANSFER" and (from_account == None or to_account == None):
             raise serializers.ValidationError("You hanven't selected an account.")
+        
+        # check for category check
+        if not category:
+            raise serializers.ValidationError("------------------------")
 
         if from_account and transaction_type.name in ['EXPENSE', 'LOAN/DEBT'] and from_account.account_type.name in ['CREDIT CARD', 'LOAN/DEBT']:
             fixed_credit_limit = attr.get('fixed_credit_limit')
@@ -130,6 +135,7 @@ class TransactionSerializer(serializers.ModelSerializer):
         amount = validated_data.get('amount')
         from_account = validated_data.get("from_account")
         to_account = validated_data.get("to_account")
+        category = validated_data.get("category")
 
         if transaction_type.name == 'EXPENSE':
             if from_account.account_type.name in ['CREDIT CARD', 'LOAN']:
@@ -157,6 +163,8 @@ class TransactionSerializer(serializers.ModelSerializer):
                 to_account.balance += amount
                 to_account.save()
 
+                
+
         transaction = Transaction.objects.create(
             from_account=validated_data.get('from_account'),
             to_account=validated_data.get("to_account"),
@@ -164,7 +172,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             note=validated_data.get('note'),
             event_date=validated_data.get('event_date'),
             transaction_type=validated_data.get('transaction_type'),
-            category=validated_data.get('transaction_type_category'),
+            category=category,
             amount=amount
         )
 

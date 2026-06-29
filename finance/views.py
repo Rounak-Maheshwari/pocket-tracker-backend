@@ -37,16 +37,15 @@ class AccountListCreateView(APIView):
 
         if type:
             if type == "LIQUID":
-                accounts = accounts.filter(Q(account_type__name="BANK") | Q(account_type__name="CASH"))
+                account = account.filter(Q(account_type__name="BANK") | Q(account_type__name="CASH"))
             else:
-                accounts = accounts.filter(account_type__name=type)
+                account = account.filter(account_type__name=type)
 
         serializer = AccountSerializer(account, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     def post(self, request):
         user=request.user
-
         serializer = AccountSerializer(data=request.data, context={'user': user})
 
         if serializer.is_valid():
@@ -99,7 +98,7 @@ class TransactionCreateListView(GenericAPIView, CreateModelMixin, ListModelMixin
     serializer_class = TransactionSerializer
 
     def get_queryset(self):
-        queryset = Transaction.objects.filter(user=self.request.user)
+        queryset = Transaction.objects.filter(user=self.request.user).order_by("-event_date")
         type_filter = self.request.query_params.get("type")
         month = self.request.query_params.get("month")
         year = self.request.query_params.get("year")
@@ -110,7 +109,6 @@ class TransactionCreateListView(GenericAPIView, CreateModelMixin, ListModelMixin
             end_date = f"{year}-{month}-30"
             queryset = queryset.filter(event_date__range=(start_date, end_date))
         return queryset
-
 
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)
